@@ -3,6 +3,7 @@
 FROM node:24-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
+COPY scripts/ scripts/
 RUN npm ci --no-audit --no-fund
 COPY . .
 RUN npx ng build

@@ -1,7 +1,7 @@
 # Record locking over SSE
 
 A small, complete example of **per-tab record locking with live takeover**, built the way I would build it in production:
-.NET 10 minimal API, EF Core 10 on PostgreSQL, Angular 22 with Tailwind CSS 4 and PrimeNG, Docker, and GitHub Actions.
+.NET 10 minimal API, EF Core 10 on PostgreSQL, Angular 18 with Tailwind CSS 3 and PrimeNG 17, Docker, and GitHub Actions.
 
 Open the same record in two browser tabs. The first tab gets the lock. The second can take it over, and the first is
 warned at once, switches to read-only, and any save it still sends is rejected by the server.
@@ -67,26 +67,31 @@ Development mode:
 ```bash
 docker compose up -d db
 cd backend && dotnet run --project src/LockDemo.Api      # http://localhost:5xxx, see launchSettings
-cd frontend && npm ci && npx ng serve                     # http://localhost:4200
+cd frontend && npm ci && npx ng serve                     # http://localhost:4200 (Node 18.19+, 20 or 22+)
 ```
 
 For `ng serve`, point `frontend/public/config.json` at the port `dotnet run` prints.
 
-### PrimeNG license
+### Why Angular 18
 
-PrimeNG 20+ is distributed under the PrimeUI license. Personal and non-commercial open-source projects qualify for
-the free Community License (https://primeui.dev/licenses/community). Without a key the app shows an
-"Invalid PrimeUI License" notice. To use yours locally, create the git-ignored file `frontend/public/config.local.json`:
+The UI uses **PrimeNG 17.18.15, the last PrimeNG release under the MIT license**. Later releases (v18 and up) use
+PrimeTek's PrimeUI license, which needs a license key. PrimeNG 17 supports Angular 17 and 18 only, so the web app is
+pinned to **Angular 18.2**.
 
-```json
-{ "primeLicense": "YOUR-KEY" }
-```
+Angular 18 is past its support window, and `npm audit` reports high-severity advisories for it that will not be fixed
+on that line (XSS sanitization bypasses in the template compiler, XSRF token leakage in the HTTP client). CI runs the
+audit on every build and shows the result without blocking. This is a deliberate trade-off for a demo with no sign-in
+and no real data; a production app should move to a supported Angular release (and a licensed PrimeNG or another
+component library).
+
+The theme is PrimeNG's Aura light theme with the blue accent swapped for sky, generated on `npm install` by
+`frontend/scripts/build-theme.mjs` (sky-700 passes WCAG AA with white text; the stock blue does not).
 
 ## Tests
 
 ```bash
 cd backend && dotnet test     # integration tests against a real Postgres via Testcontainers (needs Docker)
-cd frontend && npx ng test --watch=false
+cd frontend && npm run test:ci      # Jasmine + Karma in headless Chrome
 ```
 
 The backend tests cover exclusive locks, takeover with the warning and rejected save, stale locks, the keyset
@@ -108,16 +113,16 @@ The backend tests cover exclusive locks, takeover with the warning and rejected 
    data on first start.
 3. **GitHub:** Settings > Pages > Source: GitHub Actions. Then Settings > Secrets and variables > Actions:
    - variable `API_URL` = your Render URL, for example `https://sse-lock-demo-api.onrender.com`
-   - secret `PRIMEUI_LICENSE` = your PrimeUI key (optional)
 4. Push to `main`. CI runs the tests and builds both images; then Pages publishes the web app.
 
 ## Security notes
 
-- No secrets in the repository: connection strings and the license key come from the host's environment and secrets.
+- No secrets in the repository: the connection string comes from the host's environment.
 - API: CORS limited to configured origins and the `X-Tab-Id` header; per-IP rate limits on writes and open streams;
   input length and enum validation; security headers; the containers run as non-root users.
 - Web: strict Content Security Policy in the nginx image (no inline scripts), runtime `config.json` served with `no-store`.
 - It is a public demo without sign-in: anyone can edit the sample records. Do not put real data in it.
+- The web app runs on Angular 18, which has known unpatched advisories; see "Why Angular 18".
 
 ## Project layout
 
@@ -132,6 +137,7 @@ backend/
 frontend/
   src/app/core/  runtime config, SSE tab session, typed API client
   src/app/queue/ the review queue page (PrimeNG table, editor, takeover dialog)
+  scripts/       build-theme.mjs: sky-accent PrimeNG theme, generated on install
 docker-compose.yml   local stack
 render.yaml          API on Render
 .github/workflows/   CI and Pages deployment

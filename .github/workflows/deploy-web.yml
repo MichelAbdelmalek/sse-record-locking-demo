@@ -42,11 +42,8 @@ jobs:
       - name: Point the app at the deployed API
         env:
           API_URL: ${{ vars.API_URL }}
-          # PrimeUI Community license key (repository secret). PrimeNG checks it in the browser,
-          # so it ends up in the published site; it is kept out of the repository only.
-          PRIMEUI_LICENSE: ${{ secrets.PRIMEUI_LICENSE }}
         run: |
-          node -e 'require("fs").writeFileSync("dist/web/browser/config.json", JSON.stringify({ apiUrl: process.env.API_URL, primeLicense: process.env.PRIMEUI_LICENSE || undefined }))'
+          node -e 'require("fs").writeFileSync("dist/web/browser/config.json", JSON.stringify({ apiUrl: process.env.API_URL }))'
           # Pages has no rewrites; serve the app for unknown paths too.
           cp dist/web/browser/index.html dist/web/browser/404.html
       - uses: actions/upload-pages-artifact@v4

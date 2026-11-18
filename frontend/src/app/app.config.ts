@@ -1,26 +1,19 @@
 import { provideHttpClient, withFetch } from '@angular/common/http';
-import { ApplicationConfig, provideBrowserGlobalErrorListeners } from '@angular/core';
+import { ApplicationConfig, provideZoneChangeDetection } from '@angular/core';
+import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
 import { provideRouter } from '@angular/router';
-import Aura from '@primeuix/themes/aura';
-import { providePrimeNG } from 'primeng/config';
 import { routes } from './app.routes';
 import { APP_CONFIG, AppConfig } from './core/app-config';
 
 export function buildAppConfig(config: AppConfig): ApplicationConfig {
   return {
     providers: [
-      provideBrowserGlobalErrorListeners(),
+      provideZoneChangeDetection({ eventCoalescing: true }),
       provideRouter(routes),
       provideHttpClient(withFetch()),
+      // PrimeNG 17 animates overlays, dialogs and toasts with @angular/animations.
+      provideAnimationsAsync(),
       { provide: APP_CONFIG, useValue: config },
-      providePrimeNG({
-        license: config.primeLicense,
-        theme: {
-          preset: Aura,
-          // Light only for now; Tailwind utilities win over PrimeNG through this layer order.
-          options: { darkModeSelector: '.app-dark', cssLayer: { name: 'primeng', order: 'theme, base, primeng' } },
-        },
-      }),
     ],
   };
 }

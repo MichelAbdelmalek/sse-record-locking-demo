@@ -7,11 +7,10 @@ import { ConfirmationService, MessageService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { InputTextModule } from 'primeng/inputtext';
-import { MessageModule } from 'primeng/message';
-import { SelectModule } from 'primeng/select';
+import { DropdownModule } from 'primeng/dropdown';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
-import { TextareaModule } from 'primeng/textarea';
+import { InputTextareaModule } from 'primeng/inputtextarea';
 import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
 import { LiveEvent, LockInfo, RecordStatus, WorkRecord } from '../core/models';
@@ -25,9 +24,10 @@ interface Draft { title: string; status: RecordStatus; notes: string }
 
 @Component({
   selector: 'app-queue-page',
+  standalone: true,
   imports: [
-    DatePipe, FormsModule, ButtonModule, ConfirmDialogModule, InputTextModule, MessageModule,
-    SelectModule, TableModule, TagModule, TextareaModule, ToastModule, TooltipModule,
+    DatePipe, FormsModule, ButtonModule, ConfirmDialogModule, DropdownModule, InputTextModule,
+    InputTextareaModule, TableModule, TagModule, ToastModule, TooltipModule,
   ],
   providers: [MessageService, ConfirmationService],
   templateUrl: './queue.page.html',
@@ -59,15 +59,25 @@ export class QueuePage {
   readonly open = computed(() => this.records().find((r) => r.id === this.openId()) ?? null);
   readonly lockedCount = computed(() => this.records().filter((r) => r.lock).length);
   nameInput = this.tab.name();
+  /** Ticks every 30 s so "held for" times stay current without a request. */
+  readonly now = signal(Date.now());
 
   constructor() {
-    this.tab.events.pipe(takeUntilDestroyed(inject(DestroyRef))).subscribe((e) => this.onLive(e));
+    const destroyRef = inject(DestroyRef);
+    const clock = setInterval(() => this.now.set(Date.now()), 30_000);
+    destroyRef.onDestroy(() => clearInterval(clock));
+    this.tab.events.pipe(takeUntilDestroyed(destroyRef)).subscribe((e) => this.onLive(e));
     this.tab.connect();
     this.loadMore();
   }
 
   isMine(lock: LockInfo | null): boolean {
     return !!lock && lock.holderPublicId === this.tab.publicId();
+  }
+
+  heldFor(lock: LockInfo): string {
+    const min = Math.floor((this.now() - Date.parse(lock.acquiredAt)) / 60_000);
+    return min < 1 ? 'now' : `${min} min`;
   }
 
   statusLabel(s: RecordStatus): string {
@@ -110,7 +120,7 @@ export class QueuePage {
       message: `${this.blockedBy()?.holderName ?? 'The other editor'} will be told right away, and any changes they have not saved will be rejected.`,
       acceptLabel: 'Take over',
       rejectLabel: 'Cancel',
-      rejectButtonProps: { severity: 'secondary', outlined: true },
+      rejectButtonStyleClass: 'p-button-secondary p-button-outlined',
       accept: () => this.requestLock(rec.id, true),
     });
   }

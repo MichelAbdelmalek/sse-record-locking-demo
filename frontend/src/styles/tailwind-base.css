@@ -1,0 +1,8 @@
+/*
+ * PrimeNG 17 puts its theme in the "primeng" cascade layer. Layered rules lose to unlayered ones,
+ * so Tailwind's reset goes in a lower layer: the reset < PrimeNG < Tailwind utilities (unlayered).
+ */
+@layer tailwind-base, primeng;
+@layer tailwind-base {
+  @tailwind base;
+}
