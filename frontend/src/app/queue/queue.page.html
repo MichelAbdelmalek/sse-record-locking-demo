@@ -1,0 +1,158 @@
+<p-toast position="bottom-right" />
+<p-confirmdialog [style]="{ width: '28rem' }" />
+
+<header class="border-b border-surface-200 bg-white">
+  <div class="mx-auto flex max-w-7xl flex-wrap items-center gap-4 px-4 py-4 sm:px-6">
+    <div class="mr-auto">
+      <h1 class="text-lg font-semibold text-surface-900">Record locking over SSE</h1>
+      <p class="text-sm text-surface-500">Per-tab locks, live takeover, keyset “next unlocked”. .NET 10 · EF Core · Postgres · Angular</p>
+    </div>
+
+    <label class="flex items-center gap-2 text-sm text-surface-600">
+      <span>You are</span>
+      <input pInputText class="w-40" [(ngModel)]="nameInput" (keyup.enter)="applyName()" (blur)="applyName()"
+             maxlength="40" aria-label="Your display name" />
+    </label>
+
+    <span class="inline-flex items-center gap-2 rounded-md border border-surface-200 px-3 py-1.5 text-sm"
+          [pTooltip]="'This tab’s live connection. Its locks stay valid only while it is open.'" tooltipPosition="bottom">
+      <span class="size-2 rounded-full"
+            [class.bg-green-500]="tab.state() === 'live'"
+            [class.bg-amber-400]="tab.state() !== 'live'"></span>
+      {{ tab.state() === 'live' ? 'Live' : tab.state() === 'connecting' ? 'Connecting' : 'Reconnecting' }}
+    </span>
+
+    <p-button label="Open a second tab" icon="pi pi-external-link" severity="secondary" [outlined]="true"
+              (onClick)="openAnotherTab()" />
+  </div>
+</header>
+
+<main class="mx-auto grid max-w-7xl gap-6 px-4 py-6 sm:px-6 lg:grid-cols-[minmax(0,1fr)_26rem]">
+  <section aria-labelledby="queue-h" class="min-w-0">
+    <div class="mb-3 flex items-center justify-between gap-3">
+      <div>
+        <h2 id="queue-h" class="font-semibold text-surface-900">Review queue</h2>
+        <p class="text-sm text-surface-500">{{ records().length }} loaded · {{ lockedCount() }} being edited right now</p>
+      </div>
+      <p-button label="Next unlocked" icon="pi pi-forward" (onClick)="nextUnlocked()"
+                pTooltip="Jumps to the next record nobody is editing, in queue order" tooltipPosition="left" />
+    </div>
+
+    <div class="overflow-hidden rounded-xl border border-surface-200 bg-white">
+      <p-table [value]="records()" dataKey="id" [loading]="loading() && records().length === 0"
+               [rowHover]="true" styleClass="text-sm" [tableStyle]="{ 'min-width': '40rem' }">
+        <ng-template #header>
+          <tr>
+            <th class="w-28">Ref</th>
+            <th>Document</th>
+            <th class="w-28">Status</th>
+            <th class="w-16 text-center">Prio</th>
+            <th class="w-44">Editing</th>
+          </tr>
+        </ng-template>
+        <ng-template #body let-r>
+          <tr class="cursor-pointer" [class.!bg-primary-50]="r.id === openId()" (click)="openRecord(r)"
+              (keydown.enter)="openRecord(r)" tabindex="0" [attr.aria-label]="'Open ' + r.reference">
+            <td class="whitespace-nowrap font-mono text-xs text-surface-500">{{ r.reference }}</td>
+            <td class="text-surface-800">{{ r.title }}</td>
+            <td><p-tag [value]="statusLabel(r.status)" [severity]="statusSeverity(r.status)" /></td>
+            <td class="text-center tabular-nums">{{ r.priority }}</td>
+            <td>
+              @if (r.lock; as l) {
+                <span class="inline-flex items-center gap-1.5 text-xs"
+                      [class.text-primary-700]="isMine(l)" [class.text-amber-700]="!isMine(l)">
+                  <i class="pi pi-lock text-[11px]"></i>
+                  {{ isMine(l) ? 'You' : l.holderName }}
+                </span>
+              } @else {
+                <span class="text-xs text-surface-400">Free</span>
+              }
+            </td>
+          </tr>
+        </ng-template>
+      </p-table>
+      @if (cursor()) {
+        <div class="border-t border-surface-200 p-3 text-center">
+          <p-button label="Load more" [text]="true" [loading]="loading()" (onClick)="loadMore()" />
+        </div>
+      }
+    </div>
+  </section>
+
+  <aside aria-labelledby="editor-h" class="lg:sticky lg:top-6 lg:self-start">
+    @if (open(); as rec) {
+      <div class="rounded-xl border border-surface-200 bg-white p-5">
+        <div class="mb-4 flex items-start justify-between gap-3">
+          <div>
+            <p class="font-mono text-xs text-surface-500">{{ rec.reference }}</p>
+            <h2 id="editor-h" class="font-semibold text-surface-900">{{ rec.title }}</h2>
+          </div>
+          <p-button icon="pi pi-times" [rounded]="true" [text]="true" severity="secondary"
+                    ariaLabel="Close and release the lock" (onClick)="closeRecord()" />
+        </div>
+
+        @switch (mode()) {
+          @case ('locking') {
+            <p-message severity="secondary" styleClass="mb-4" icon="pi pi-spin pi-spinner">Requesting the lock…</p-message>
+          }
+          @case ('editing') {
+            <p-message severity="success" styleClass="mb-4" icon="pi pi-lock">
+              You hold the lock. Other tabs see this record as yours.
+            </p-message>
+          }
+          @case ('blocked') {
+            <p-message severity="warn" styleClass="mb-4" icon="pi pi-lock">
+              <div class="flex flex-col gap-2">
+                <span>{{ blockedBy()?.holderName ?? 'Another editor' }} is editing this record@if (blockedBy(); as b) { since {{ b.acquiredAt | date: 'shortTime' }}}.</span>
+                <p-button label="Take over" size="small" severity="warn" (onClick)="takeOver()" />
+              </div>
+            </p-message>
+          }
+          @case ('lost') {
+            <p-message severity="error" styleClass="mb-4" icon="pi pi-ban">
+              <div class="flex flex-col gap-2">
+                <span>{{ lostTo() ?? 'Someone' }} took over. Your changes can no longer be saved.</span>
+                <p-button label="Take it back" size="small" severity="danger" [outlined]="true" (onClick)="takeOver()" />
+              </div>
+            </p-message>
+          }
+        }
+
+        <form class="flex flex-col gap-4" (ngSubmit)="save()">
+          <label class="flex flex-col gap-1.5 text-sm">
+            <span class="text-surface-600">Title</span>
+            <input pInputText name="title" [(ngModel)]="draft.title" maxlength="120" required
+                   [disabled]="mode() !== 'editing'" />
+          </label>
+          <label class="flex flex-col gap-1.5 text-sm">
+            <span class="text-surface-600">Status</span>
+            <p-select name="status" [(ngModel)]="draft.status" [options]="statuses" optionLabel="label" optionValue="value"
+                      [disabled]="mode() !== 'editing'" appendTo="body" />
+          </label>
+          <label class="flex flex-col gap-1.5 text-sm">
+            <span class="text-surface-600">Notes</span>
+            <textarea pTextarea name="notes" [(ngModel)]="draft.notes" rows="5" maxlength="2000"
+                      [disabled]="mode() !== 'editing'"></textarea>
+          </label>
+          <div class="flex items-center justify-between gap-3">
+            <span class="text-xs text-surface-500">
+              @if (rec.updatedBy) { Last saved by {{ rec.updatedBy }} at {{ rec.updatedAt | date: 'shortTime' }} }
+            </span>
+            <p-button type="submit" label="Save" icon="pi pi-check" [loading]="saving()"
+                      [disabled]="mode() !== 'editing' || !draft.title.trim()" />
+          </div>
+        </form>
+      </div>
+    } @else {
+      <div class="rounded-xl border border-dashed border-surface-300 bg-white p-5 text-sm text-surface-600">
+        <h2 id="editor-h" class="mb-2 font-semibold text-surface-900">Try it</h2>
+        <ol class="list-decimal space-y-1.5 pl-5">
+          <li>Open a record. This tab takes its lock.</li>
+          <li>Click <strong>Open a second tab</strong> and open the same record there.</li>
+          <li>Take over in the second tab. The first tab is warned at once and can no longer save.</li>
+          <li>Close a tab. Its locks are freed a few seconds later.</li>
+        </ol>
+      </div>
+    }
+  </aside>
+</main>

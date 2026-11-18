@@ -1,0 +1,25 @@
+# Render Blueprint for the API (free plan, Docker).
+# Render > New > Blueprint > pick this repository. It asks for the secret values below.
+services:
+  - type: web
+    name: sse-lock-demo-api
+    runtime: docker
+    plan: free
+    region: frankfurt
+    dockerContext: ./backend
+    dockerfilePath: ./backend/Dockerfile
+    healthCheckPath: /api/health
+    # Deploy only after the GitHub CI checks on the commit pass.
+    autoDeployTrigger: checksPass
+    envVars:
+      - key: PORT
+        value: "8080"
+      # Neon direct (non-pooled) connection string in Npgsql form, see README.
+      - key: ConnectionStrings__Default
+        sync: false
+      # The GitHub Pages origin, for example https://michelabdelmalek.github.io
+      - key: Cors__AllowedOrigins__0
+        sync: false
+      # One free instance: deliver events in memory. Use Postgres when running several instances.
+      - key: Events__Mode
+        value: InMemory

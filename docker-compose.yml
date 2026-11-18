@@ -1,0 +1,44 @@
+# Local stack: Postgres, the API and the Angular app.
+#   docker compose up --build
+#   App: http://localhost:8081   API: http://localhost:8080/api/health
+# The credentials below are for this local throwaway database only.
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: lockdemo
+      POSTGRES_PASSWORD: lockdemo
+      POSTGRES_DB: lockdemo
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lockdemo -d lockdemo"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: ./backend
+    environment:
+      ConnectionStrings__Default: "Host=db;Port=5432;Database=lockdemo;Username=lockdemo;Password=lockdemo"
+      Cors__AllowedOrigins__0: "http://localhost:4200"
+      Cors__AllowedOrigins__1: "http://localhost:8081"
+      # Same events path as a multi-instance deployment; set InMemory for a single instance.
+      Events__Mode: "Postgres"
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  web:
+    build: ./frontend
+    ports:
+      - "8081:8080"
+    depends_on:
+      - api
+
+volumes:
+  pgdata:
